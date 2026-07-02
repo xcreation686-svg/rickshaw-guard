@@ -1,0 +1,68 @@
+name: Build RickshawGuard APK
+
+# Runs when you push, or when you click "Run workflow" in the Actions tab.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Your repo only needs two files:
+      #   lib/main.dart                     (the app code)
+      #   .github/workflows/build.yml       (this file)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Scaffold a Flutter project and drop in main.dart
+        run: |
+          flutter create --org com.rickshawguard --project-name rickshaw_guard app
+          cp lib/main.dart app/lib/main.dart
+
+      - name: Add the dependencies the app needs
+        working-directory: app
+        run: flutter pub add flutter_blue_plus permission_handler shared_preferences
+
+      - name: Add Bluetooth permissions to the Android manifest
+        working-directory: app
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          perms = (
+              '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" '
+              'android:usesPermissionFlags="neverForLocation" />\n'
+              '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" '
+              'android:maxSdkVersion="30" />\n'
+          )
+          if "BLUETOOTH_CONNECT" not in s:
+              s = s.replace("<application", perms + "    <application", 1)
+          p.write_text(s)
+          print(s)
+          PY
+
+      - name: Build the release APK
+        working-directory: app
+        run: flutter build apk --release
+
+      # After the run finishes, download the APK from the run's "Artifacts".
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rickshaw-guard-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
